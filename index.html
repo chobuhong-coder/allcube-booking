@@ -55,6 +55,20 @@
   .timeBtn.full:hover{transform:none;border-color:#e7e2d6}
   .timeBtn.full .left{color:#b0b6c2}
 
+  /* 반(요일) 선택 카드 - 정규반처럼 특정 날짜가 아니라 요일반 자체에 정원이 걸리는 강의용 */
+  #classGrid{display:flex;flex-direction:column;gap:10px;margin-bottom:10px}
+  .classBtn{
+    padding:16px 18px;border-radius:14px;border:1px solid #e7e2d6;background:#fff;cursor:pointer;
+    display:flex;align-items:center;justify-content:space-between;transition:.15s;
+  }
+  .classBtn:hover{border-color:#2F6BFF;transform:translateY(-2px)}
+  .classBtn .label{font-size:15px;font-weight:800}
+  .classBtn .time{font-size:12.5px;color:#8b95a9;font-weight:600;margin-top:2px}
+  .classBtn .left{font-size:12.5px;color:#2F6BFF;font-weight:800}
+  .classBtn.full{opacity:.45;cursor:not-allowed;background:#f3f1ea}
+  .classBtn.full:hover{transform:none;border-color:#e7e2d6}
+  .classBtn.full .left{color:#b0b6c2}
+
   #emptyMsg{font-size:13px;color:#9aa3b2;text-align:center;padding:20px 0}
 
   /* modal */
@@ -115,20 +129,29 @@
     </div>
     <div class="infoRow" id="infoRow"></div>
 
-    <p class="sectionTitle">날짜 선택</p>
-    <div id="calHead">
-      <button id="calPrev" onclick="changeMonth(-1)">‹</button>
-      <div class="calTitle" id="calTitle"></div>
-      <button id="calNext" onclick="changeMonth(1)">›</button>
-    </div>
-    <div id="calWeekdays">
-      <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
-    </div>
-    <div id="calGrid"></div>
+    <!-- 날짜 기반(원데이 등) 강의용 화면 -->
+    <div id="dateBasedScreen">
+      <p class="sectionTitle">날짜 선택</p>
+      <div id="calHead">
+        <button id="calPrev" onclick="changeMonth(-1)">‹</button>
+        <div class="calTitle" id="calTitle"></div>
+        <button id="calNext" onclick="changeMonth(1)">›</button>
+      </div>
+      <div id="calWeekdays">
+        <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+      </div>
+      <div id="calGrid"></div>
 
-    <p class="sectionTitle">시간 선택</p>
-    <div id="timeGrid"></div>
-    <div id="emptyMsg" style="display:none">이 날짜엔 예약 가능한 시간이 없어요.</div>
+      <p class="sectionTitle">시간 선택</p>
+      <div id="timeGrid"></div>
+      <div id="emptyMsg" style="display:none">이 날짜엔 예약 가능한 시간이 없어요.</div>
+    </div>
+
+    <!-- 반(요일) 기반(정규반 등) 강의용 화면: 날짜가 아니라 반 자체에 정원이 걸림 -->
+    <div id="classBasedScreen" style="display:none">
+      <p class="sectionTitle">반 선택</p>
+      <div id="classGrid"></div>
+    </div>
   </div>
 
   <div id="confirmScreen">
@@ -179,8 +202,9 @@
   const DOW_KR = ['일','월','화','수','목','금','토'];
 
   let courseData = null;
-  let selectedDate = null; // 'YYYY-MM-DD'
+  let selectedDate = null; // 'YYYY-MM-DD' (날짜기반) 또는 classKey (반기반)
   let selectedTime = null;
+  let isRecurring = false; // 이 강의가 "반(요일) 기반" 정원 방식인지 여부
 
   function pad(n){ return n < 10 ? '0'+n : ''+n; }
   function toDateStr(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
@@ -208,7 +232,17 @@
       <span class="infoChip">📍 ${courseData.location}</span>
     `;
 
-    renderDateStrip();
+    isRecurring = courseData.mode === 'recurring';
+
+    if(isRecurring){
+      document.getElementById('dateBasedScreen').style.display = 'none';
+      document.getElementById('classBasedScreen').style.display = 'block';
+      renderClassGrid();
+    } else {
+      document.getElementById('dateBasedScreen').style.display = 'block';
+      document.getElementById('classBasedScreen').style.display = 'none';
+      renderDateStrip();
+    }
 
     document.getElementById('loading').style.display = 'none';
     document.getElementById('bookingScreen').style.display = 'block';
@@ -292,11 +326,8 @@
     loadTimesForDate(dateStr);
   }
 
-  // ====== 수정된 핵심 로직 ======
-  // 이전 버전: "status가 pending이 아니면 무조건 영구 유효" -> status 필드가 누락되거나
-  // 예상 못한 값이 들어오면 영구적으로 자리가 막혀버리는 위험한 방식이었음.
-  // 수정: "status가 정확히 confirmed일 때만 영구 유효"로 화이트리스트 방식으로 전환.
-  // 그 외(값이 없거나, pending이거나, 알 수 없는 값)는 전부 홀드시간(bookedAt+holdMinutes) 기준으로 판단.
+  // ====== 정원 판단 로직 (날짜기반/반기반 공통 재사용) ======
+  // "status가 정확히 confirmed일 때만 영구 유효", 그 외는 홀드시간(bookedAt+holdMinutes) 기준으로 판단.
   function isActiveEntry(entry, holdMinutes){
     if(!entry) return false;
     if(entry.status === 'confirmed') return true; // 결제 확정된 예약만 영구 유효
@@ -344,11 +375,61 @@
     });
   }
 
-  function openModal(time){
+  // ====== 반(요일) 기반 강의 전용 로직 ======
+  // 날짜별이 아니라 "월요일반/수요일반/금요일반" 같은 반 자체에 정원이 걸리는 방식.
+  // Firebase 경로는 기존과 동일하게 /bookings/{courseId}/{classKey}/{time}/{id} 를 그대로 사용해서
+  // admin.html / 결제확인 Worker와 100% 호환됨 (classKey를 "날짜" 자리에 그대로 끼워넣는 것뿐).
+  // 특정 날짜가 아니라 classKey 자체가 고정된 주소이기 때문에, 몇 주가 지나도 같은 경로를 계속
+  // 누적 집계하게 되어 "그 반이 찰 때까지 계속 마감 유지"가 자동으로 성립함.
+  async function renderClassGrid(){
+    const grid = document.getElementById('classGrid');
+    grid.innerHTML = '';
+
+    const classes = courseData.classes || {};
+    const capacity = courseData.capacity || 1;
+    const holdMinutes = courseData.holdMinutes || 15;
+    const classKeys = Object.keys(classes);
+
+    if(classKeys.length === 0){
+      grid.innerHTML = '<div id="emptyMsg" style="display:block">아직 개설된 반이 없어요.</div>';
+      return;
+    }
+
+    for(const classKey of classKeys){
+      const cls = classes[classKey];
+      const res = await fetch(`${DB_URL}/bookings/${window.__courseId}/${classKey}/${cls.time}.json`);
+      const entries = res.ok ? Object.values((await res.json()) || {}) : [];
+      const activeCount = entries.filter(e => isActiveEntry(e, holdMinutes)).length;
+      const remaining = capacity - activeCount;
+      const full = remaining <= 0;
+
+      const btn = document.createElement('div');
+      btn.className = 'classBtn' + (full ? ' full' : '');
+      btn.innerHTML = `
+        <div>
+          <div class="label">${cls.label}</div>
+          <div class="time">${cls.time}</div>
+        </div>
+        <div class="left">${full ? '마감' : remaining + '석 남음'}</div>
+      `;
+      if(!full){
+        btn.onclick = () => openModal(cls.time, classKey, cls.label);
+      }
+      grid.appendChild(btn);
+    }
+  }
+
+  function openModal(time, classKey, classLabel){
     selectedTime = time;
-    document.getElementById('modalTitle').textContent = '예약 정보 입력';
-    document.getElementById('modalSub').textContent =
-      `${selectedDate} (${DOW_KR[new Date(selectedDate+'T00:00:00').getDay()]}) ${time}`;
+    if(isRecurring){
+      selectedDate = classKey; // classKey를 그대로 "날짜 자리"에 사용 (Firebase 경로 재사용)
+      document.getElementById('modalTitle').textContent = '등록 정보 입력';
+      document.getElementById('modalSub').textContent = `${classLabel} · ${time}`;
+    } else {
+      document.getElementById('modalTitle').textContent = '예약 정보 입력';
+      document.getElementById('modalSub').textContent =
+        `${selectedDate} (${DOW_KR[new Date(selectedDate+'T00:00:00').getDay()]}) ${time}`;
+    }
     document.getElementById('fName').value = '';
     document.getElementById('fPhone').value = '';
     document.getElementById('fEmail').value = '';
@@ -361,6 +442,7 @@
   }
 
   let currentBookingId = null; // 방금 생성한 예약의 Firebase push ID (결제 연동에 사용)
+  let currentClassLabel = null; // 반기반 강의일 때 확정화면에 보여줄 반 이름
 
   async function submitBooking(){
     const name = document.getElementById('fName').value.trim();
@@ -393,7 +475,7 @@
         submitBtn.disabled = false;
         submitBtn.textContent = '예약 확정';
         closeModal();
-        loadTimesForDate(selectedDate);
+        if(isRecurring){ renderClassGrid(); } else { loadTimesForDate(selectedDate); }
         return;
       }
 
@@ -415,6 +497,10 @@
       const postResult = await postRes.json();
       currentBookingId = postResult.name; // Firebase가 생성한 push ID
 
+      if(isRecurring){
+        currentClassLabel = (courseData.classes && courseData.classes[selectedDate] && courseData.classes[selectedDate].label) || selectedDate;
+      }
+
       showHold(name, holdMinutes);
     } catch(e){
       errEl.textContent = '예약 처리 중 오류가 발생했습니다. 다시 시도해주세요.';
@@ -432,8 +518,12 @@
     document.getElementById('confirmScreen').style.display = 'block';
 
     document.getElementById('cfName').textContent = courseData.name;
-    const dow = DOW_KR[new Date(selectedDate+'T00:00:00').getDay()];
-    document.getElementById('cfDate').textContent = `${selectedDate} (${dow}) ${selectedTime}`;
+    if(isRecurring){
+      document.getElementById('cfDate').textContent = `${currentClassLabel} · ${selectedTime} (매주 반복)`;
+    } else {
+      const dow = DOW_KR[new Date(selectedDate+'T00:00:00').getDay()];
+      document.getElementById('cfDate').textContent = `${selectedDate} (${dow}) ${selectedTime}`;
+    }
     document.getElementById('cfLocation').textContent = `📍 ${courseData.location}`;
     document.getElementById('cfContact').textContent =
       `다른 분들도 이 시간을 기다리고 있어요. ${holdMinutes}분 안에 결제를 완료하지 않으면 예약이 자동 취소되고 다시 열립니다. 문의: ${courseData.contactPhone}`;
