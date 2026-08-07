@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -186,6 +187,10 @@
       <label>이메일 (선택)</label>
       <input type="email" id="fEmail" placeholder="example@email.com">
     </div>
+    <div class="field">
+      <label>메모 (선택)</label>
+      <input type="text" id="fMemo" placeholder="결제자와 예약자가 다른 경우 입력해주세요 (예: 보호자 성함/학생 이름)">
+    </div>
     <p class="errMsg" id="errMsg"></p>
     <div class="modalBtns">
       <button class="btn btnGhost" onclick="closeModal()">취소</button>
@@ -326,6 +331,13 @@
     loadTimesForDate(dateStr);
   }
 
+  // ====== 지난 시간 자동 마감 판단 (날짜기반 강의 전용) ======
+  // 선택된 날짜가 오늘이고, 그 시간이 이미 지났으면 정원과 무관하게 예약 불가 처리.
+  function isPastSlot(dateStr, timeStr){
+    const slot = new Date(dateStr + 'T' + timeStr + ':00');
+    return Date.now() >= slot.getTime();
+  }
+
   // ====== 정원 판단 로직 (날짜기반/반기반 공통 재사용) ======
   // "status가 정확히 confirmed일 때만 영구 유효", 그 외는 홀드시간(bookedAt+holdMinutes) 기준으로 판단.
   function isActiveEntry(entry, holdMinutes){
@@ -363,17 +375,29 @@
       const entries = bookingsForDate[t] ? Object.values(bookingsForDate[t]) : [];
       const activeCount = entries.filter(e => isActiveEntry(e, holdMinutes)).length;
       const remaining = capacity - activeCount;
-      const full = remaining <= 0;
+      const capacityFull = remaining <= 0;
+      const past = isPastSlot(dateStr, t);
+      const full = capacityFull || past;
+
+      const label = past ? '지난 시간' : (capacityFull ? '마감' : remaining + '석 남음');
 
       const btn = document.createElement('div');
       btn.className = 'timeBtn' + (full ? ' full' : '');
-      btn.innerHTML = `<div class="t">${t}</div><div class="left">${full ? '마감' : remaining + '석 남음'}</div>`;
+      btn.innerHTML = `<div class="t">${t}</div><div class="left">${label}</div>`;
       if(!full){
         btn.onclick = () => openModal(t);
       }
       grid.appendChild(btn);
     });
   }
+
+  // 오늘 날짜 화면을 열어둔 채로 시간이 흘러 슬롯이 지나가면 자동으로 다시 그려서 마감 처리.
+  // (날짜기반 강의에서만 동작; 반기반 강의는 특정 시각 개념이 없어 해당 없음)
+  setInterval(() => {
+    if(!isRecurring && selectedDate){
+      loadTimesForDate(selectedDate);
+    }
+  }, 60000);
 
   // ====== 반(요일) 기반 강의 전용 로직 ======
   // 날짜별이 아니라 "월요일반/수요일반/금요일반" 같은 반 자체에 정원이 걸리는 방식.
@@ -433,6 +457,7 @@
     document.getElementById('fName').value = '';
     document.getElementById('fPhone').value = '';
     document.getElementById('fEmail').value = '';
+    document.getElementById('fMemo').value = '';
     document.getElementById('errMsg').style.display = 'none';
     document.getElementById('overlay').classList.add('on');
   }
@@ -448,6 +473,7 @@
     const name = document.getElementById('fName').value.trim();
     const phone = document.getElementById('fPhone').value.trim();
     const email = document.getElementById('fEmail').value.trim();
+    const memo = document.getElementById('fMemo').value.trim();
     const errEl = document.getElementById('errMsg');
     const submitBtn = document.getElementById('submitBtn');
 
@@ -482,6 +508,7 @@
       const body = {
         name, phone,
         ...(email ? { email } : {}),
+        ...(memo ? { memo } : {}),
         status: 'pending',
         bookedAt: new Date().toISOString()
       };
