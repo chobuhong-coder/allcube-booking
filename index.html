@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -310,7 +311,7 @@
       cellDate.setHours(0,0,0,0);
       const dateStr = toDateStr(cellDate);
       const dow = cellDate.getDay();
-      const hasSchedule = ((courseData.schedule && courseData.schedule[dow]) || []).length > 0;
+      const hasSchedule = getTimesForDate(dateStr, dow).length > 0;
       const inRange = cellDate >= minDate && cellDate <= maxDate;
       const disabled = !inRange || !hasSchedule;
 
@@ -338,6 +339,21 @@
     return Date.now() >= slot.getTime();
   }
 
+  // ====== 특정 날짜 예외 적용 (날짜기반 강의 전용) ======
+  // 코치가 "이 날짜만 다르게" 설정해둔 값(courses/{id}/scheduleExceptions/{date})이 있으면
+  // 요일 기본 스케줄 위에 덮어씀: false=그 날짜만 닫음, true=그 날짜만 추가로 엶.
+  function getTimesForDate(dateStr, dow){
+    const base = (courseData.schedule && courseData.schedule[dow]) || [];
+    const ex = (courseData.scheduleExceptions && courseData.scheduleExceptions[dateStr]) || null;
+    if(!ex) return base.slice();
+    const set = new Set(base);
+    Object.keys(ex).forEach(t => {
+      if(ex[t] === false) set.delete(t);
+      else if(ex[t] === true) set.add(t);
+    });
+    return Array.from(set);
+  }
+
   // ====== 정원 판단 로직 (날짜기반/반기반 공통 재사용) ======
   // "status가 정확히 confirmed일 때만 영구 유효", 그 외는 홀드시간(bookedAt+holdMinutes) 기준으로 판단.
   function isActiveEntry(entry, holdMinutes){
@@ -356,7 +372,7 @@
 
     const d = new Date(dateStr + 'T00:00:00');
     const dow = d.getDay();
-    const times = (courseData.schedule && courseData.schedule[dow]) || [];
+    const times = getTimesForDate(dateStr, dow).sort();
 
     if(times.length === 0){
       emptyMsg.style.display = 'block';
