@@ -110,6 +110,9 @@
   }
   #confirmScreen .card b{color:#0B1834}
   #confirmScreen .note{font-size:12px;color:#9aa3b2;margin-top:14px}
+  #confirmScreen .holdNotice{
+    font-size:15.5px;font-weight:800;color:#D01C28;line-height:1.65;margin-top:18px;
+  }
   #payBtn{
     display:block;width:100%;padding:15px;border:none;border-radius:100px;background:#0B1834;color:#fff;
     font-size:14.5px;font-weight:800;cursor:pointer;
@@ -166,7 +169,8 @@
       <div id="cfLocation"></div>
     </div>
     <button id="payBtn" onclick="goToPayment()">결제하러 가기</button>
-    <p class="note" id="cfContact"></p>
+    <p class="holdNotice" id="cfContact"></p>
+    <p class="note" id="cfContactPhone"></p>
   </div>
 
 </div>
@@ -396,7 +400,7 @@
     const bookingsForDate = (await res.json()) || {};
 
     const capacity = courseData.capacity || 1;
-    const holdMinutes = courseData.holdMinutes || 15;
+    const holdMinutes = courseData.holdMinutes || 5;
     const durationMin = courseData.durationMin || 60;
 
     times.forEach(t => {
@@ -458,7 +462,7 @@
 
     const classes = courseData.classes || {};
     const capacity = courseData.capacity || 1;
-    const holdMinutes = courseData.holdMinutes || 15;
+    const holdMinutes = courseData.holdMinutes || 5;
     const classKeys = Object.keys(classes);
 
     if(classKeys.length === 0){
@@ -534,7 +538,7 @@
     submitBtn.textContent = '처리 중...';
 
     try {
-      const holdMinutes = courseData.holdMinutes || 15;
+      const holdMinutes = courseData.holdMinutes || 5;
       const capacity = courseData.capacity || 1;
       const durationMin = courseData.durationMin || 60;
 
@@ -617,8 +621,9 @@
       document.getElementById('cfDate').textContent = `${selectedDate} (${dow}) ${selectedTime}`;
     }
     document.getElementById('cfLocation').textContent = `📍 ${courseData.location}`;
-    document.getElementById('cfContact').textContent =
-      `다른 분들도 이 시간을 기다리고 있어요. ${holdMinutes}분 안에 결제를 완료하지 않으면 예약이 자동 취소되고 다시 열립니다. 문의: ${courseData.contactPhone}`;
+    document.getElementById('cfContact').innerHTML =
+      `다른 분들도 이 시간을 기다리고 있어요.<br>${holdMinutes}분 안에 결제를 완료하지 않으면 예약이 자동 취소됩니다.`;
+    document.getElementById('cfContactPhone').textContent = `문의: ${courseData.contactPhone}`;
 
     const deadline = Date.now() + holdMinutes * 60000;
     const timerEl = document.getElementById('cfTimer');
