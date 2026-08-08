@@ -339,10 +339,16 @@
     return Date.now() >= slot.getTime();
   }
 
-  // ====== 특정 날짜 예외 적용 (날짜기반 강의 전용) ======
+  // ====== 특정 날짜 예외 적용 (요일반복 강의 전용) / 특강(dated) 전용 날짜 조회 ======
   // 코치가 "이 날짜만 다르게" 설정해둔 값(courses/{id}/scheduleExceptions/{date})이 있으면
   // 요일 기본 스케줄 위에 덮어씀: false=그 날짜만 닫음, true=그 날짜만 추가로 엶.
+  // mode:"dated"인 특강 강의는 요일 반복 개념이 아예 없이, courses/{id}/dates/{date}에 지정된
+  // 날짜에만 예약을 받는다 (예: "8월 30일 딱 하루").
   function getTimesForDate(dateStr, dow){
+    if(courseData.mode === 'dated'){
+      const times = (courseData.dates && courseData.dates[dateStr]) || [];
+      return times.slice();
+    }
     const base = (courseData.schedule && courseData.schedule[dow]) || [];
     const ex = (courseData.scheduleExceptions && courseData.scheduleExceptions[dateStr]) || null;
     if(!ex) return base.slice();
