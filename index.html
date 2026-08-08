@@ -371,6 +371,11 @@
     return (Date.now() - bookedMs) < holdMinutes * 60000;
   }
 
+  function toMinutes(t){
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  }
+
   async function loadTimesForDate(dateStr){
     const grid = document.getElementById('timeGrid');
     const emptyMsg = document.getElementById('emptyMsg');
@@ -392,16 +397,36 @@
 
     const capacity = courseData.capacity || 1;
     const holdMinutes = courseData.holdMinutes || 15;
+    const durationMin = courseData.durationMin || 60;
 
     times.forEach(t => {
       const entries = bookingsForDate[t] ? Object.values(bookingsForDate[t]) : [];
       const activeCount = entries.filter(e => isActiveEntry(e, holdMinutes)).length;
       const remaining = capacity - activeCount;
       const capacityFull = remaining <= 0;
-      const past = isPastSlot(dateStr, t);
-      const full = capacityFull || past;
 
-      const label = past ? '지난 시간' : (capacityFull ? '마감' : remaining + '석 남음');
+      // 인접 시간대 겹침 체크: 같은 코치가 한 번에 두 수업을 진행할 수 없으므로,
+      // 이 슬롯 시작시각 기준 durationMin(수업 시간) 이내로 겹치는 다른 시간에
+      // 이미 확정/홀드 중인 예약이 있으면 이 슬롯도 자동으로 마감 처리한다.
+      // 예: 60분 수업, 30분 간격 슬롯 -> 11:30 예약 확정 시 11:00·12:00 자동 마감.
+      let overlapBlocked = false;
+      if(!capacityFull){
+        const tMinutes = toMinutes(t);
+        for(const otherTime of Object.keys(bookingsForDate)){
+          if(otherTime === t) continue;
+          if(Math.abs(toMinutes(otherTime) - tMinutes) >= durationMin) continue;
+          const otherEntries = Object.values(bookingsForDate[otherTime] || {});
+          if(otherEntries.some(e => isActiveEntry(e, holdMinutes))){
+            overlapBlocked = true;
+            break;
+          }
+        }
+      }
+
+      const past = isPastSlot(dateStr, t);
+      const full = capacityFull || past || overlapBlocked;
+
+      const label = past ? '지난 시간' : (full ? '마감' : remaining + '석 남음');
 
       const btn = document.createElement('div');
       btn.className = 'timeBtn' + (full ? ' full' : '');
@@ -510,14 +535,32 @@
 
     try {
       const holdMinutes = courseData.holdMinutes || 15;
+      const capacity = courseData.capacity || 1;
+      const durationMin = courseData.durationMin || 60;
 
       // 제출 직전 재확인 (동시 예약 방지용 최소 보정)
       const checkRes = await fetch(`${DB_URL}/bookings/${window.__courseId}/${selectedDate}/${selectedTime}.json`);
       const current = (await checkRes.json()) || {};
       const currentActiveCount = Object.values(current).filter(e => isActiveEntry(e, holdMinutes)).length;
-      const capacity = courseData.capacity || 1;
 
-      if(currentActiveCount >= capacity){
+      let overlapBlocked = false;
+      if(!isRecurring){
+        // 인접 시간대(수업 시간 이내로 겹치는 다른 시간)에 방금 다른 사람이 예약했는지도 재확인
+        const dayRes = await fetch(`${DB_URL}/bookings/${window.__courseId}/${selectedDate}.json`);
+        const bookingsForDate = (await dayRes.json()) || {};
+        const tMinutes = toMinutes(selectedTime);
+        for(const otherTime of Object.keys(bookingsForDate)){
+          if(otherTime === selectedTime) continue;
+          if(Math.abs(toMinutes(otherTime) - tMinutes) >= durationMin) continue;
+          const otherEntries = Object.values(bookingsForDate[otherTime] || {});
+          if(otherEntries.some(e => isActiveEntry(e, holdMinutes))){
+            overlapBlocked = true;
+            break;
+          }
+        }
+      }
+
+      if(currentActiveCount >= capacity || overlapBlocked){
         errEl.textContent = '방금 마감되었습니다. 다른 시간을 선택해주세요.';
         errEl.style.display = 'block';
         submitBtn.disabled = false;
