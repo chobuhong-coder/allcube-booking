@@ -226,6 +226,11 @@
     const courseId = params.get('course') || COURSE_ID;
     window.__courseId = courseId;
 
+    // ====== 유입경로(광고 채널) 추적 ======
+    // 예: ...?course=oneday&src=danggeun (당근마켓), &src=naver (네이버 파워링크) 등
+    // src가 없으면 자연유입/직접방문으로 간주해 빈 값으로 둠 (예약에는 필드 자체를 안 남김)
+    window.__source = (params.get('src') || params.get('utm_source') || '').trim();
+
     const res = await fetch(`${DB_URL}/courses/${courseId}.json`);
     courseData = await res.json();
 
@@ -607,6 +612,7 @@
         name, phone,
         ...(email ? { email } : {}),
         ...(memo ? { memo } : {}),
+        ...(window.__source ? { source: window.__source } : {}),
         status: 'pending',
         bookedAt: new Date().toISOString()
       };
@@ -683,7 +689,8 @@
       const url = `${courseData.paymentUrl}${sep}bcid=${encodeURIComponent(window.__courseId)}`
         + `&bdate=${encodeURIComponent(selectedDate)}`
         + `&btime=${encodeURIComponent(selectedTime)}`
-        + `&bid=${encodeURIComponent(currentBookingId || '')}`;
+        + `&bid=${encodeURIComponent(currentBookingId || '')}`
+        + (window.__source ? `&src=${encodeURIComponent(window.__source)}` : '');
       location.href = url;
     } else {
       alert('결제 페이지 연결이 아직 설정되지 않았습니다. ' + courseData.contactPhone + '로 문의해주세요.');
