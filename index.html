@@ -351,11 +351,11 @@
     return Date.now() >= slot.getTime();
   }
 
-  // 수업 "시작 시각"이 아니라 "시작 cutoffMinutes(기본 60분) 전"부터 예약을 마감한다.
+  // 수업 "시작 시각"이 아니라 "시작 cutoffMinutes(기본 30분) 전"부터 예약을 마감한다.
   // 강의별로 마감 기준을 다르게 두고 싶으면 Firebase courses/{id}에 cutoffMinutes 필드를 추가하면
-  // 그 값이 우선 적용됨 (없으면 기본 60분).
+  // 그 값이 우선 적용됨 (없으면 기본 30분).
   function getCutoffMinutes(){
-    return (courseData && courseData.cutoffMinutes) || 60;
+    return (courseData && courseData.cutoffMinutes) || 30;
   }
   function isCutoffPassed(dateStr, timeStr){
     const slot = new Date(dateStr + 'T' + timeStr + ':00');
@@ -589,7 +589,7 @@
       const capacity = courseData.capacity || 1;
       const durationMin = courseData.durationMin || 60;
 
-      // 모달에서 정보 입력하는 사이 마감 시각(수업 시작 60분 전)을 넘겼는지 재확인
+      // 모달에서 정보 입력하는 사이 마감 시각(수업 시작 30분 전)을 넘겼는지 재확인
       if(!isRecurring && isCutoffPassed(selectedDate, selectedTime)){
         errEl.textContent = '마감 시간이 지나 더 이상 예약할 수 없습니다. 다른 시간을 선택해주세요.';
         errEl.style.display = 'block';
