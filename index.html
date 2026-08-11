@@ -1,6 +1,7 @@
 
 
 
+
 <!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -343,11 +344,22 @@
     loadTimesForDate(dateStr);
   }
 
-  // ====== 지난 시간 자동 마감 판단 (날짜기반 강의 전용) ======
+  // ====== 지난 시간 / 마감시각 자동 판단 (날짜기반 강의 전용) ======
   // 선택된 날짜가 오늘이고, 그 시간이 이미 지났으면 정원과 무관하게 예약 불가 처리.
   function isPastSlot(dateStr, timeStr){
     const slot = new Date(dateStr + 'T' + timeStr + ':00');
     return Date.now() >= slot.getTime();
+  }
+
+  // 수업 "시작 시각"이 아니라 "시작 cutoffMinutes(기본 60분) 전"부터 예약을 마감한다.
+  // 강의별로 마감 기준을 다르게 두고 싶으면 Firebase courses/{id}에 cutoffMinutes 필드를 추가하면
+  // 그 값이 우선 적용됨 (없으면 기본 60분).
+  function getCutoffMinutes(){
+    return (courseData && courseData.cutoffMinutes) || 60;
+  }
+  function isCutoffPassed(dateStr, timeStr){
+    const slot = new Date(dateStr + 'T' + timeStr + ':00');
+    return Date.now() >= (slot.getTime() - getCutoffMinutes() * 60000);
   }
 
   // ====== 특정 날짜 예외 적용 (요일반복 강의 전용) / 특강(dated) 전용 날짜 조회 ======
@@ -435,7 +447,8 @@
       }
 
       const past = isPastSlot(dateStr, t);
-      const full = capacityFull || past || overlapBlocked;
+      const cutoffPassed = !past && isCutoffPassed(dateStr, t);
+      const full = capacityFull || past || overlapBlocked || cutoffPassed;
 
       const label = past ? '지난 시간' : (full ? '마감' : remaining + '석 남음');
 
@@ -575,6 +588,17 @@
       const holdMinutes = courseData.holdMinutes || 5;
       const capacity = courseData.capacity || 1;
       const durationMin = courseData.durationMin || 60;
+
+      // 모달에서 정보 입력하는 사이 마감 시각(수업 시작 60분 전)을 넘겼는지 재확인
+      if(!isRecurring && isCutoffPassed(selectedDate, selectedTime)){
+        errEl.textContent = '마감 시간이 지나 더 이상 예약할 수 없습니다. 다른 시간을 선택해주세요.';
+        errEl.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = '예약 확정';
+        closeModal();
+        loadTimesForDate(selectedDate);
+        return;
+      }
 
       // 제출 직전 재확인 (동시 예약 방지용 최소 보정)
       const checkRes = await fetch(`${DB_URL}/bookings/${window.__courseId}/${selectedDate}/${selectedTime}.json`);
