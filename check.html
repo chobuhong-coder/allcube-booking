@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>올큐브 예약 확인</title>
+<style>
+  @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
+  *{box-sizing:border-box;font-family:'Pretendard',system-ui,sans-serif;margin:0;padding:0}
+  body{background:#F7F7F5;color:#0F1E3D}
+  #wrap{max-width:520px;margin:0 auto;padding:32px 18px 60px}
+
+  .head{text-align:center;margin-bottom:24px}
+  .head h2{font-size:20px;font-weight:800;letter-spacing:-0.02em;margin-bottom:6px}
+  .head p{font-size:13px;color:#8b95a9;line-height:1.6}
+
+  .searchBox{background:#fff;border:1px solid #e7e2d6;border-radius:16px;padding:18px 18px 16px;margin-bottom:24px}
+  .field label{display:block;font-size:12.5px;font-weight:700;color:#4a5670;margin-bottom:6px}
+  .field input{
+    width:100%;padding:11px 13px;border:1px solid #e7e2d6;border-radius:10px;font-size:14px;
+    outline:none;transition:.15s;
+  }
+  .field input:focus{border-color:#2F6BFF}
+  .hintRow{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .infoChip{background:#F7F7F5;border:1px solid #e7e2d6;border-radius:100px;padding:5px 11px;font-size:11.5px;font-weight:600;color:#4a5670}
+  .btn{display:block;width:100%;margin-top:14px;padding:13px;border-radius:100px;border:none;font-size:14px;font-weight:800;cursor:pointer}
+  .btnPrimary{background:#0B1834;color:#fff}
+  .btnPrimary:disabled{opacity:.5;cursor:not-allowed}
+  .errMsg{color:#D01C28;font-size:12px;margin-top:8px;display:none}
+
+  .sectionTitle{font-size:13.5px;font-weight:800;color:#0B1834;margin:0 0 12px}
+  #results{display:none}
+  .list{display:flex;flex-direction:column;gap:10px}
+  .card{background:#fff;border:1px solid #e7e2d6;border-radius:16px;padding:16px 18px}
+  .card.past{background:#f3f1ea}
+  .cardTop{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px}
+  .cardTop .cname{font-size:15px;font-weight:800;line-height:1.4}
+  .badge{flex-shrink:0;border-radius:100px;padding:4px 10px;font-size:11px;font-weight:800}
+  .badge.upcoming{background:#EAF1FF;color:#2F6BFF}
+  .badge.weekly{background:#FFF7E0;color:#B98A00}
+  .badge.past{background:#e7e2d6;color:#8b95a9}
+  .row{display:flex;gap:10px;font-size:13.5px;line-height:1.9}
+  .row .k{width:52px;flex-shrink:0;color:#8b95a9;font-weight:600}
+  .row .v{color:#0F1E3D;font-weight:600;word-break:keep-all}
+  .divider{height:1px;background:#efece4;margin:8px 0}
+
+  #emptyMsg{display:none;text-align:center;padding:28px 10px;background:#fff;border:1px solid #e7e2d6;border-radius:16px}
+  #emptyMsg .ic{font-size:26px;margin-bottom:10px}
+  #emptyMsg b{display:block;font-size:15px;font-weight:800;margin-bottom:6px}
+  #emptyMsg p{font-size:12.5px;color:#8b95a9;line-height:1.7}
+</style>
+</head>
+<body>
+
+<div id="wrap">
+  <div class="head">
+    <h2>예약 확인</h2>
+    <p>예약할 때 입력한 이름, 연락처, 이메일 중<br>하나를 입력해주세요.</p>
+  </div>
+
+  <div class="searchBox">
+    <div class="field">
+      <label for="q">이름 · 연락처 · 이메일</label>
+      <input type="text" id="q" placeholder="예: 홍길동 / 010-1234-5678 / example@email.com" autocomplete="off">
+    </div>
+    <p class="errMsg" id="errMsg"></p>
+    <button class="btn btnPrimary" id="searchBtn" onclick="search()">예약 확인</button>
+  </div>
+
+  <div id="results">
+    <p class="sectionTitle" id="resultTitle"></p>
+    <div class="list" id="list"></div>
+  </div>
+
+  <div id="emptyMsg">
+    <div class="ic">🔍</div>
+    <b>일치하는 예약이 없어요</b>
+    <p>예약할 때 입력한 정보와 같은지 확인해주세요.<br>결제가 완료된 예약만 조회됩니다.</p>
+  </div>
+</div>
+
+<script>
+  // ====== 설정 ======
+  const LOOKUP_URL = 'https://allcube-booking-lookup.chobuhong.workers.dev'; // 예약 조회 전용 Cloudflare Worker
+
+  const STATE_LABEL = { upcoming: '예정', weekly: '정규반', past: '지난 수업' };
+
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // 서버와 같은 기준으로 먼저 형식만 확인 (잘못된 입력은 요청 없이 안내)
+  function validate(q){
+    if(!q) return '이름, 연락처, 이메일 중 하나를 입력해주세요.';
+    if(q.includes('@')) return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(q) ? '' : '이메일 형식을 확인해주세요.';
+    if(/^[\d\-\s.]+$/.test(q)){
+      const d = q.replace(/\D/g, '');
+      return (d.length >= 10 && d.length <= 11) ? '' : '연락처는 전체 번호를 입력해주세요.';
+    }
+    return q.replace(/\s+/g, '').length >= 2 ? '' : '이름은 두 글자 이상 입력해주세요.';
+  }
+
+  function showErr(msg){
+    const el = document.getElementById('errMsg');
+    el.textContent = msg;
+    el.style.display = msg ? 'block' : 'none';
+  }
+
+  async function search(){
+    const q = document.getElementById('q').value.trim();
+    const btn = document.getElementById('searchBtn');
+    const msg = validate(q);
+    showErr(msg);
+    if(msg) return;
+
+    btn.disabled = true;
+    btn.textContent = '조회 중...';
+    document.getElementById('results').style.display = 'none';
+    document.getElementById('emptyMsg').style.display = 'none';
+
+    try {
+      const res = await fetch(LOOKUP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ q })
+      });
+      if(res.status === 429){ showErr('조회가 너무 잦아요. 잠시 후 다시 시도해주세요.'); return; }
+      if(res.status === 400){ showErr(validate(q) || '입력한 내용을 다시 확인해주세요.'); return; }
+      if(!res.ok) throw new Error('failed');
+      const data = await res.json();
+      render(data.results || []);
+    } catch(e){
+      showErr('조회 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '예약 확인';
+    }
+  }
+
+  function render(items){
+    if(items.length === 0){
+      document.getElementById('emptyMsg').style.display = 'block';
+      return;
+    }
+    document.getElementById('resultTitle').textContent = `예약 ${items.length}건`;
+    document.getElementById('list').innerHTML = items.map(r => `
+      <div class="card${r.state === 'past' ? ' past' : ''}">
+        <div class="cardTop">
+          <div class="cname">${esc(r.course)}</div>
+          <span class="badge ${esc(r.state)}">${esc(STATE_LABEL[r.state] || '')}</span>
+        </div>
+        ${r.coach ? `<div class="row"><span class="k">코치</span><span class="v">${esc(r.coach)} 코치</span></div>` : ''}
+        <div class="row"><span class="k">일시</span><span class="v">${esc(r.when)}</span></div>
+        ${r.location ? `<div class="row"><span class="k">장소</span><span class="v">📍 ${esc(r.location)}</span></div>` : ''}
+        <div class="divider"></div>
+        <div class="row"><span class="k">예약자</span><span class="v">${esc(r.name)}</span></div>
+        <div class="row"><span class="k">연락처</span><span class="v">${esc(r.phone)}</span></div>
+      </div>
+    `).join('');
+    document.getElementById('results').style.display = 'block';
+  }
+
+  // 아임웹 iframe 높이 자동 맞춤: 내용 높이가 바뀔 때마다 부모 페이지에 알려줌
+  function postHeight(){
+    try { parent.postMessage({ type: 'allcube-check-height', h: document.documentElement.scrollHeight }, '*'); } catch(e){}
+  }
+  if(window.ResizeObserver) new ResizeObserver(postHeight).observe(document.body);
+  window.addEventListener('load', postHeight);
+
+  document.getElementById('q').addEventListener('keydown', e => {
+    if(e.key === 'Enter' && !e.isComposing) search();
+  });
+</script>
+
+</body>
+</html>
